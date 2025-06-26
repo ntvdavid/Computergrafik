@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Magic Spell Lab</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #c { width: 100vw; height: 100vh; display: block; }
+  </style>
+  <!-- three.js und TrackballControls (UMD) -->
+  <script src="libs/three/three.js"></script>
+  <script src="libs/three/controls/TrackballControls.js"></script>
+  <script src="libs/three/loaders/GLTFLoader.js"></script> 
+  <script src="libs/util/dat.gui.js"></script>
+  <!-- Cannon.js (Physics Engine) via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+  <!-- postprocessing -->
+  <script src="libs/three/postprocessing/EffectComposer.js"></script>
+  <script src="libs/three/postprocessing/RenderPass.js"></script>
+  <script src="libs/three/postprocessing/ShaderPass.js"></script>
+  <!-- Shader, die UnrealBloomPass braucht -->
+  <script src="libs/three/postprocessing/UnrealBloomPass.js"></script>
+  <script src="libs/three/shaders/CopyShader.js"></script>
+  <script src="libs/three/shaders/LuminosityHighPassShader.js"></script>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script src="magic_lab.js"></script>
+</body>
+</html>
