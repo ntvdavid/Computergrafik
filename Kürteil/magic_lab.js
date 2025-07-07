@@ -7,7 +7,9 @@ const guiParams = {
   boxCount:         10,
   fireflyCount:    200,
   spawnRadius:     10,
-  moteCount:  200
+  targetCount:    5,
+  targetDistance: 30, // neu: Distanz der Targets
+  coneAngle:      Math.PI/3
 };
 
 const spells = {
@@ -26,12 +28,11 @@ gui.add(guiParams, 'fireflyCount',       0, 1000, 1 )
    .name('Anzahl Fireflies')
    .onChange(v => initFireflies());
 gui.add(guiParams, 'spawnRadius',        1,   50   ).name('Spawn-Radius');
+gui.add(guiParams, 'targetCount',    1, 20, 1).name('Anzahl Ziele').onChange(initTargets);
+gui.add(guiParams, 'targetDistance', 10, 100, 1).name('Ziel‐Distanz').onChange(initTargets);
 gui.add(spells, 'Feuerball').name('Feuerball');
 gui.add(spells, 'Blitz'    ).name('Blitz');
 gui.add(spells, 'Frost'    ).name('Frost');
-gui.add(guiParams, 'moteCount', 0, 1000, 1)
-   .name('Anzahl Motes')
-   .onChange(v => initMotes());
 
 gui.__controllers.find(c=>c.property==='boxCount')
    .onChange(v => initBoxes());
@@ -44,6 +45,10 @@ let motes, moteSpeeds;
 let world, boxes = [], explosions = [], projectiles = [];
 let groundRotationSpeed = guiParams.groundSpeed; 
 let wandAnim = { active: false, time: 0 };
+let targets      = [];
+let score        = 0;
+let timeLeft     = 60;    // Sekunden
+let gameActive   = true;
 
 initScene();
 initPhysics();
@@ -54,8 +59,7 @@ initBoxes();
 initPostprocessing();
 initFireflies();
 initSkyboxEquirect();
-initPortal();
-initMotes();
+initTargets();
 requestAnimationFrame(animate);
 
 // ————————————————— Functions —————————————————
@@ -107,6 +111,71 @@ function initPhysics() {
   groundBody.addShape(new CANNON.Plane());
   groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
   world.addBody(groundBody);
+}
+
+function initPostprocessing() {
+  const renderPass = new THREE.RenderPass(scene, camera);
+  bloomPass = new THREE.UnrealBloomPass(
+    new THREE.Vector2(innerWidth, innerHeight),
+    0.5, 0.4, 0.85
+  );
+  bloomPass.renderToScreen = false;
+
+  const rgbShiftPass = new THREE.ShaderPass(THREE.RGBShiftShader);
+  rgbShiftPass.uniforms['amount'].value = 0.0015;  // kleiner Wert für dezenten Effekt
+  rgbShiftPass.renderToScreen = true;             // letzter Pass
+
+  composer = new THREE.EffectComposer(renderer);
+  composer.addPass(renderPass);
+  composer.addPass(bloomPass);
+  composer.addPass(rgbShiftPass);
+}
+
+function initSkyboxEquirect() {
+  new THREE.TextureLoader().load(
+    'milky_way_skybox_hdri_panorama/textures/material_emissive.png',
+    tex => {
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      scene.background = tex;
+    }
+  );
+}
+
+function initTargets() {
+  // alte löschen
+  targets.forEach(t => scene.remove(t.mesh));
+  targets = [];
+
+  const { targetCount, targetDistance, coneAngle } = guiParams;
+  const upAxis = new THREE.Vector3(0,1,0);
+
+  const geo = new THREE.SphereGeometry(0.5,12,12);
+  const mat = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x440000 });
+
+  for (let i = 0; i < targetCount; i++) {
+    // 1) Richtung aus Kamera‐Vorderseite plus Zufall im Kegel
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const ang = (Math.random() - 0.5) * 2 * coneAngle;
+    dir.applyAxisAngle(upAxis, ang).normalize();
+
+    // 2) Spawn‐Position = Kamera + dir * Distanz + zufälliger Höhen‐Offset
+    const pos = camera.position.clone()
+      .add(dir.clone().multiplyScalar(targetDistance))
+      .add(new THREE.Vector3(0, Math.random() * 3 + 1, 0));
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(pos);
+    scene.add(mesh);
+
+    // einfache Drift
+    const vel = new THREE.Vector3(
+      (Math.random()-0.5)*0.2,
+      0,
+      (Math.random()-0.5)*0.2
+    );
+    targets.push({ mesh, vel });
+  }
 }
 
 function initGround() {
@@ -176,109 +245,6 @@ function initFireflies() {
   scene.add(fireflies);
 }
 
-function initMotes() {
-  // vorhandene entfernen
-  if (motes) scene.remove(motes);
-
-  const count = guiParams.moteCount;
-  const R     = 8;   // Radius um den Kreis
-  const positions = new Float32Array(count * 3);
-  moteSpeeds = [];
-
-  for (let i = 0; i < count; i++) {
-    // zufällig auf einer flachen Scheibe Y≈0.5±0.5
-    const angle = Math.random() * Math.PI * 2;
-    const r     = R * Math.sqrt(Math.random());
-    positions[3*i  ] = Math.cos(angle) * r;
-    positions[3*i+1] = 0.5 + (Math.random() - 0.5) * 0.5;
-    positions[3*i+2] = Math.sin(angle) * r;
-
-    // jede Mote bekommt eine eigene Auf/Ab-Geschwindigkeit
-    moteSpeeds.push( 0.2 + Math.random() * 0.6 );
-  }
-
-  const geom = new THREE.BufferGeometry().addAttribute(
-    'position', new THREE.BufferAttribute(positions, 3)
-  );
-  const mat = new THREE.PointsMaterial({
-    color: 0xff66cc,
-    size: 0.05,
-    transparent: true,
-    opacity: 0.6,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-
-  motes = new THREE.Points(geom, mat);
-  scene.add(motes);
-}
-
-function initPostprocessing() {
-  const renderPass = new THREE.RenderPass(scene, camera);
-  bloomPass = new THREE.UnrealBloomPass(
-    new THREE.Vector2(innerWidth, innerHeight),
-    0.5, 0.4, 0.85
-  );
-  bloomPass.renderToScreen = true;
-
-  composer = new THREE.EffectComposer(renderer);
-  composer.addPass(renderPass);
-  composer.addPass(bloomPass);
-}
-
-function initSkyboxEquirect() {
-  new THREE.TextureLoader().load(
-    'milky_way_skybox_hdri_panorama/textures/material_emissive.png',
-    tex => {
-      tex.mapping = THREE.EquirectangularReflectionMapping;
-      scene.background = tex;
-    }
-  );
-}
-
-function initPortal() {
-  const geom = new THREE.CircleGeometry(3,64);
-  const mat  = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false,
-    uniforms: {
-      uTime:  { value: 0 },
-      uColor: { value: new THREE.Color(0x66ccff) }
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main(){
-        vUv = uv;
-        gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);
-      }
-    `,
-    fragmentShader: `
-      varying vec2 vUv;
-      uniform float uTime;
-      uniform vec3 uColor;
-
-      float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
-      float noise(vec2 p){
-        vec2 i=floor(p), f=fract(p);
-        float a=hash(i), b=hash(i+vec2(1,0)), c=hash(i+vec2(0,1)), d=hash(i+vec2(1,1));
-        vec2 u=f*f*(3.0-2.0*f);
-        return mix(a,b,u.x) + (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y;
-      }
-
-      void main(){
-        vec2 uv = vUv*2.0 -1.0;
-        float n = noise(uv*3.0 + uTime*0.5);
-        float a = smoothstep(0.2,0.8,n);
-        gl_FragColor = vec4(uColor*(0.5+0.5*n), a*0.6);
-      }
-    `
-  });
-
-  portal = new THREE.Mesh(geom, mat);
-  portal.rotation.x = -Math.PI/2;
-  portal.position.y = 0.01;
-  scene.add(portal);
-}
-
 function initInput() {
   window.addEventListener('keydown', ev => {
     if (ev.key.toLowerCase() === 'f') spells.Feuerball();
@@ -339,26 +305,30 @@ function createExplosion(center) {
 }
 
 function castFireball() {
-  const ballGeo = new THREE.SphereGeometry(0.3, 16, 16);
-  const ballMat = new THREE.MeshBasicMaterial({ color: 0xff5522, emissive: 0x442200 });
-  const ball    = new THREE.Mesh(ballGeo, ballMat);
+  // Mesh erzeugen
+  const ball = new THREE.Mesh(
+    new THREE.SphereGeometry(0.3,16,16),
+    new THREE.MeshBasicMaterial({ color:0xff5522, emissive:0x442200 })
+  );
 
-  // Start an der Spitze des Stabes
-  tip.getWorldPosition(ball.position);
+  // 1) Start am Tip des Stabes
+  const start = new THREE.Vector3();
+  tip.getWorldPosition(start);
+  ball.position.copy(start);
   scene.add(ball);
 
-  // Flugrichtung
+  // 2) Flugrichtung: von dort aus in Kamerarichtung
   const dir = new THREE.Vector3();
-  tip.getWorldDirection(dir).normalize();
-  const speed = 8;
+  camera.getWorldDirection(dir);
+  dir.normalize();
 
-  // Füge in projectiles ein, mit maxLife und onDie-Callback
+  // 3) Speed & Lifetime
+  const speed = 15;
   projectiles.push({
-    mesh:    ball,
+    mesh:     ball,
     velocity: dir.multiplyScalar(speed),
     life:     0,
-    maxLife:  1.5, // nach 1.5s wird er automatisch ausgelöst
-    onDie:    pos => createColoredParticles(pos, 0xff5522)
+    maxLife:  2
   });
 }
 
@@ -402,10 +372,52 @@ function castFrost() {
   setTimeout(()=>scene.remove(circle),500);
 }
 
+function spawnSingleTarget() {
+  const R = guiParams.spawnRadius;
+  const geo = new THREE.SphereGeometry(0.4, 12, 12);
+  const mat = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x440000, shininess: 30 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(
+    (Math.random() - 0.5) * 2 * R,
+    1 + Math.random() * 4,
+    (Math.random() - 0.5) * 2 * R
+  );
+  scene.add(mesh);
+  const vel = new THREE.Vector3(
+    (Math.random() - 0.5) * 0.5,
+    0,
+    (Math.random() - 0.5) * 0.5
+  );
+  targets.push({ mesh, vel });
+}
+
+
 // ===== Haupt-Animate-Loop =====
 function animate(time) {
   const dt = (time - t0) * 0.001;
   t0 = time;
+
+  if (gameActive) {
+    // Timer runterticken
+    timeLeft = Math.max(0, timeLeft - dt);
+    if (timeLeft === 0) {
+      gameActive = false;
+      // hier könntest du ein „Game Over“ einblenden…
+    }
+  }
+
+  // Targets bewegen
+  targets.forEach(t => {
+    t.mesh.position.addScaledVector(t.vel, dt);
+    // bei Rand erreichen: einfach zurückdrehen
+    const R = guiParams.spawnRadius;
+    if (Math.abs(t.mesh.position.x) > R) t.vel.x *= -1;
+    if (Math.abs(t.mesh.position.z) > R) t.vel.z *= -1;
+  });
+
+  // HUD updaten
+  const hud = document.getElementById('hud');
+  hud.textContent = `Score: ${score} – Time: ${timeLeft.toFixed(1)}s`;
 
   // → vor controls.update() einfügen:
   for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -456,26 +468,6 @@ function animate(time) {
     for(let i=1;i<arr.length;i+=3) arr[i]+=Math.sin(time*0.001+i)*0.0001;
     fireflies.geometry.attributes.position.needsUpdate=true;
   }
-
-  // — Motions der Motes ——
-  if (motes) {
-    const pos = motes.geometry.attributes.position.array;
-    for (let i = 0; i < guiParams.moteCount; i++) {
-      // Index in Array
-      const idx = 3 * i + 1; // Y-Komponente
-
-      // sinusförmiges Schweben
-      pos[idx] += Math.sin(time * moteSpeeds[i]) * 0.001;
-
-      // leichte Drift in XY:
-      pos[3*i]   += (Math.random() - 0.5) * 0.0005;
-      pos[3*i+2] += (Math.random() - 0.5) * 0.0005;
-    }
-    motes.geometry.attributes.position.needsUpdate = true;
-  }
-
-  // Portal-Shader-Zeit
-  if(portal) portal.material.uniforms.uTime.value += dt;
 
   // Physik-Step
   world.step(1/60, dt, 3);
