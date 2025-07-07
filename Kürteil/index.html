@@ -2,10 +2,20 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>Magic Spell Lab</title>
+  <title>Magic Spell Lab - Practice Mode</title>
   <style>
     body { margin: 0; overflow: hidden; }
     #c { width: 100vw; height: 100vh; display: block; }
+    #hud  {
+      position: absolute;
+      top: 10px; left: 10px;
+      color: white;
+      font: 18px sans-serif;
+      z-index: 10;
+      background: rgba(0,0,0,0.3);
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
   </style>
   <!-- three.js und TrackballControls (UMD) -->
   <script src="libs/three/three.js"></script>
@@ -22,8 +32,10 @@
   <script src="libs/three/postprocessing/UnrealBloomPass.js"></script>
   <script src="libs/three/shaders/CopyShader.js"></script>
   <script src="libs/three/shaders/LuminosityHighPassShader.js"></script>
+  <script src="libs/three/shaders/RGBShiftShader.js"></script>
 </head>
 <body>
+  <div id="hud">Score: 0 – Time: 60s</div>
   <canvas id="c"></canvas>
   <script src="magic_lab.js"></script>
 </body>
