@@ -6,10 +6,7 @@ const guiParams = {
   orbitSpeed:       0.1,
   boxCount:         10,
   fireflyCount:    200,
-  spawnRadius:     10,
-  targetCount:    5,
-  targetDistance: 30, // neu: Distanz der Targets
-  coneAngle:      Math.PI/3
+  spawnRadius:     10,  
 };
 
 const spells = {
@@ -17,6 +14,9 @@ const spells = {
   Blitz:      () => castLightning(),
   Frost:      () => castFrost()
 };
+
+const BREAK_THRESHOLD = 15; // ab welcher Impuls-Stärke wir brechen lassen
+const SHARD_COUNT     = 8;  // wie viele Fragmente pro zerbrochener Vase
 
 const gui = new dat.GUI();
 gui.add(guiParams, 'groundSpeed',        0,   2   ).name('Boden-Speed').onChange(v => groundRotationSpeed = v);
@@ -28,8 +28,6 @@ gui.add(guiParams, 'fireflyCount',       0, 1000, 1 )
    .name('Anzahl Fireflies')
    .onChange(v => initFireflies());
 gui.add(guiParams, 'spawnRadius',        1,   50   ).name('Spawn-Radius');
-gui.add(guiParams, 'targetCount',    1, 20, 1).name('Anzahl Ziele').onChange(initTargets);
-gui.add(guiParams, 'targetDistance', 10, 100, 1).name('Ziel‐Distanz').onChange(initTargets);
 gui.add(spells, 'Feuerball').name('Feuerball');
 gui.add(spells, 'Blitz'    ).name('Blitz');
 gui.add(spells, 'Frost'    ).name('Frost');
@@ -45,10 +43,6 @@ let motes, moteSpeeds;
 let world, boxes = [], explosions = [], projectiles = [];
 let groundRotationSpeed = guiParams.groundSpeed; 
 let wandAnim = { active: false, time: 0 };
-let targets      = [];
-let score        = 0;
-let timeLeft     = 60;    // Sekunden
-let gameActive   = true;
 
 initScene();
 initPhysics();
@@ -59,7 +53,6 @@ initBoxes();
 initPostprocessing();
 initFireflies();
 initSkyboxEquirect();
-initTargets();
 requestAnimationFrame(animate);
 
 // ————————————————— Functions —————————————————
@@ -141,43 +134,6 @@ function initSkyboxEquirect() {
   );
 }
 
-function initTargets() {
-  // alte löschen
-  targets.forEach(t => scene.remove(t.mesh));
-  targets = [];
-
-  const { targetCount, targetDistance, coneAngle } = guiParams;
-  const upAxis = new THREE.Vector3(0,1,0);
-
-  const geo = new THREE.SphereGeometry(0.5,12,12);
-  const mat = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x440000 });
-
-  for (let i = 0; i < targetCount; i++) {
-    // 1) Richtung aus Kamera‐Vorderseite plus Zufall im Kegel
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
-    const ang = (Math.random() - 0.5) * 2 * coneAngle;
-    dir.applyAxisAngle(upAxis, ang).normalize();
-
-    // 2) Spawn‐Position = Kamera + dir * Distanz + zufälliger Höhen‐Offset
-    const pos = camera.position.clone()
-      .add(dir.clone().multiplyScalar(targetDistance))
-      .add(new THREE.Vector3(0, Math.random() * 3 + 1, 0));
-
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(pos);
-    scene.add(mesh);
-
-    // einfache Drift
-    const vel = new THREE.Vector3(
-      (Math.random()-0.5)*0.2,
-      0,
-      (Math.random()-0.5)*0.2
-    );
-    targets.push({ mesh, vel });
-  }
-}
-
 function initGround() {
   const tex = new THREE.TextureLoader().load('magic_circle.png');
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -210,16 +166,20 @@ function initBoxes() {
   boxes.length = 0;
 
   const R = guiParams.spawnRadius;
-  const geo = new THREE.BoxGeometry(1,1,1);
+  const geo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
   const mat = new THREE.MeshPhongMaterial({ color:0x88ccff, emissive:0x222244, shininess:50 });
 
   for (let i=0; i<guiParams.boxCount; i++) {
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((Math.random()-0.5)*2*R, Math.random()*5+1, (Math.random()-0.5)*2*R);
+    mesh.position.set(
+      (Math.random() - .5) * 2 * R,
+      0.6 + Math.random() * 3,
+      (Math.random() - .5) * 2 * R
+    );
     scene.add(mesh);
 
-    const shape = new CANNON.Box(new CANNON.Vec3(0.5,0.5,0.5));
-    const body  = new CANNON.Body({ mass:1 });
+    const shape = new CANNON.Cylinder(0.4, 0.4, 1.2, 16);
+    const body  = new CANNON.Body({ mass:2 });
     body.addShape(shape);
     body.position.copy(mesh.position);
     world.addBody(body);
@@ -248,9 +208,44 @@ function initFireflies() {
 function initInput() {
   window.addEventListener('keydown', ev => {
     if (ev.key.toLowerCase() === 'f') spells.Feuerball();
-    if (ev.code === 'e')        spells.Lightning();
+    if (ev.key.toLowerCase() === 'e') spells.Lightning();
     if (ev.code === 'Space')        castFrost();  
   });
+}
+
+function breakBox(idx) {
+  const { mesh, body } = boxes[idx];
+  const basePos = body.position.clone();
+
+  // Ursprungs-Objekt weg
+  scene.remove(mesh);
+  world.removeBody(body);
+  boxes.splice(idx, 1);
+
+  // SHARD_COUNT kleine Würfel schießen
+  for (let i = 0; i < SHARD_COUNT; i++) {
+    const sGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+    const sMat = mesh.material.clone();
+    const sMesh = new THREE.Mesh(sGeo, sMat);
+    sMesh.position.copy(basePos);
+    scene.add(sMesh);
+
+    const sShape = new CANNON.Box(new CANNON.Vec3(0.1, 0.1, 0.1));
+    const sBody  = new CANNON.Body({ mass: 0.2 });
+    sBody.addShape(sShape);
+    sBody.position.copy(basePos);
+    world.addBody(sBody);
+
+    // zufälligen Impuls drauf
+    const impulse = new CANNON.Vec3(
+      (Math.random() - 0.5) * 5,
+      Math.random() * 5,
+      (Math.random() - 0.5) * 5
+    );
+    sBody.applyImpulse(impulse, sBody.position);
+
+    boxes.push({ mesh: sMesh, body: sBody });
+  }
 }
 
 // ————————————————— Spells —————————————————
@@ -310,16 +305,17 @@ function castFireball() {
     new THREE.SphereGeometry(0.3,16,16),
     new THREE.MeshBasicMaterial({ color:0xff5522, emissive:0x442200 })
   );
-
-  // 1) Start am Tip des Stabes
-  const start = new THREE.Vector3();
-  tip.getWorldPosition(start);
-  ball.position.copy(start);
   scene.add(ball);
 
+  const start = new THREE.Vector3();
+  const dir   = new THREE.Vector3();
+
+  // 1) Start am Tip des Stabes
+  tip.getWorldPosition(start);
+  ball.position.copy(start);
+
   // 2) Flugrichtung: von dort aus in Kamerarichtung
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
+  tip.getWorldDirection(dir);
   dir.normalize();
 
   // 3) Speed & Lifetime
@@ -328,7 +324,7 @@ function castFireball() {
     mesh:     ball,
     velocity: dir.multiplyScalar(speed),
     life:     0,
-    maxLife:  2
+    maxLife:  1.5
   });
 }
 
@@ -372,52 +368,10 @@ function castFrost() {
   setTimeout(()=>scene.remove(circle),500);
 }
 
-function spawnSingleTarget() {
-  const R = guiParams.spawnRadius;
-  const geo = new THREE.SphereGeometry(0.4, 12, 12);
-  const mat = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x440000, shininess: 30 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(
-    (Math.random() - 0.5) * 2 * R,
-    1 + Math.random() * 4,
-    (Math.random() - 0.5) * 2 * R
-  );
-  scene.add(mesh);
-  const vel = new THREE.Vector3(
-    (Math.random() - 0.5) * 0.5,
-    0,
-    (Math.random() - 0.5) * 0.5
-  );
-  targets.push({ mesh, vel });
-}
-
-
 // ===== Haupt-Animate-Loop =====
 function animate(time) {
   const dt = (time - t0) * 0.001;
   t0 = time;
-
-  if (gameActive) {
-    // Timer runterticken
-    timeLeft = Math.max(0, timeLeft - dt);
-    if (timeLeft === 0) {
-      gameActive = false;
-      // hier könntest du ein „Game Over“ einblenden…
-    }
-  }
-
-  // Targets bewegen
-  targets.forEach(t => {
-    t.mesh.position.addScaledVector(t.vel, dt);
-    // bei Rand erreichen: einfach zurückdrehen
-    const R = guiParams.spawnRadius;
-    if (Math.abs(t.mesh.position.x) > R) t.vel.x *= -1;
-    if (Math.abs(t.mesh.position.z) > R) t.vel.z *= -1;
-  });
-
-  // HUD updaten
-  const hud = document.getElementById('hud');
-  hud.textContent = `Score: ${score} – Time: ${timeLeft.toFixed(1)}s`;
 
   // → vor controls.update() einfügen:
   for (let i = projectiles.length - 1; i >= 0; i--) {
