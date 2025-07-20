@@ -56,7 +56,7 @@ loadBookModel(initBooks); // Büchermodell laden, dann platzieren
 initPostprocessing();
 initFireflies(); // Glühwürmchen
 initSkyboxEquirect(); // Sternenhimmel
-requestAnimationFrame(animate); // Start
+
 
 
 
@@ -172,15 +172,11 @@ function initPhysics() {
 // --- Postprocessing Effekte ---
 function initPostprocessing() {
   const renderPass = new THREE.RenderPass(scene, camera);
-  bloomPass = new THREE.UnrealBloomPass(
-    new THREE.Vector2(innerWidth, innerHeight),
-    0.5, 0.4, 0.85
-  );
-  bloomPass.renderToScreen = false;
+  bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.4, 0.85);
 
   const rgbShiftPass = new THREE.ShaderPass(THREE.RGBShiftShader);
-  rgbShiftPass.uniforms['amount'].value = 0.0015;  // kleiner Wert für dezenten Effekt
-  rgbShiftPass.renderToScreen = true;             // letzter Pass
+  rgbShiftPass.uniforms['amount'].value = 0.0015;
+  rgbShiftPass.renderToScreen = true;
 
   composer = new THREE.EffectComposer(renderer);
   composer.addPass(renderPass);
@@ -242,16 +238,17 @@ function initFireflies() {
   if (fireflies) scene.remove(fireflies);
 
   const count = guiParams.fireflyCount, R = guiParams.spawnRadius;
-  const posArr = new Float32Array(count*3);
-  for (let i=0; i<count; i++) {
-    posArr[3*i  ] = (Math.random()-0.5)*2*R;
-    posArr[3*i+1] = Math.random()*5 +1;
-    posArr[3*i+2] = (Math.random()-0.5)*2*R;
+  const posArr = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    posArr[3 * i] = (Math.random() - 0.5) * 2 * R;
+    posArr[3 * i + 1] = Math.random() * 5 + 1;
+    posArr[3 * i + 2] = (Math.random() - 0.5) * 2 * R;
   }
-  const geom = new THREE.BufferGeometry().addAttribute('position', new THREE.BufferAttribute(posArr,3));
-  fireflies = new THREE.Points(geom, new THREE.PointsMaterial({
-    color:0xffff66, size:0.1, transparent:true, opacity:0.8, sizeAttenuation:true
-  }));
+
+  const geom = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  const mat = new THREE.PointsMaterial({ color: 0xffff66, size: 0.1, transparent: true, opacity: 0.8, sizeAttenuation: true });
+
+  fireflies = new THREE.Points(geom, mat);
   scene.add(fireflies);
 }
 
@@ -278,14 +275,14 @@ function breakBox(idx) {
 // --- Zaubersprüche: Explosionseffekt ---
 function createExplosion(center) {
   const count = guiParams.particleCount;
-  const geo   = new THREE.BufferGeometry();
-  const pos   = new Float32Array(count * 3);
-  const vels  = [];
-  
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const vels = [];
+
   for (let i = 0; i < count; i++) {
-    pos[3*i  ] = center.x;
-    pos[3*i+1] = center.y;
-    pos[3*i+2] = center.z;
+    pos[3 * i] = center.x;
+    pos[3 * i + 1] = center.y;
+    pos[3 * i + 2] = center.z;
     const s = guiParams.explosionStrength;
     const dir = new THREE.Vector3(
       Math.random() * 2 - 1,
@@ -295,12 +292,7 @@ function createExplosion(center) {
     vels.push(dir);
   }
 
-  if ( typeof geo.setAttribute === 'function' ) {
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  } else {
-    geo.addAttribute('position', new THREE.BufferAttribute(pos, 3));
-  }
-
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const mat = new THREE.PointsMaterial({ color: 0xffee88, size: 0.5, sizeAttenuation: true });
   const pts = new THREE.Points(geo, mat);
   pts.userData = { vels, age: 0 };
@@ -325,26 +317,24 @@ function createExplosion(center) {
 // --- Zauberspruch: Feuerball ---
 function castFireball() {
   const ball = new THREE.Mesh(
-    new THREE.SphereGeometry(0.3,16,16),
-    new THREE.MeshBasicMaterial({ color:0xff5522, emissive:0x442200 })
+    new THREE.SphereGeometry(0.3, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0xff5522, emissive: 0x442200 })
   );
   scene.add(ball);
 
   const start = new THREE.Vector3();
-  const dir   = new THREE.Vector3();
-
+  const dir = new THREE.Vector3();
   tip.getWorldPosition(start);
-  ball.position.copy(start);
-
   tip.getWorldDirection(dir);
   dir.normalize();
 
+  ball.position.copy(start);
   const speed = 15;
   projectiles.push({
-    mesh:     ball,
+    mesh: ball,
     velocity: dir.multiplyScalar(speed),
-    life:     0,
-    maxLife:  1.5
+    life: 0,
+    maxLife: 1.5
   });
 }
 
@@ -355,8 +345,7 @@ function castLightning() {
 
   const dir = new THREE.Vector3();
   tip.getWorldDirection(dir).normalize();
-
-  const end = start.clone().add(dir.clone().multiplyScalar(100)); // lang und tödlich
+  const end = start.clone().add(dir.clone().multiplyScalar(100));
 
   const pts = [];
   for (let i = 0; i <= 20; i++) {
@@ -379,7 +368,6 @@ function castLightning() {
   scene.add(bolt);
   setTimeout(() => scene.remove(bolt), 150);
 
-  const raycaster = new THREE.Raycaster(start, dir, 0, 100);
   const hitBoxes = boxes.filter(b => {
     const pos = b.mesh.position;
     const toBox = pos.clone().sub(start);
@@ -389,7 +377,7 @@ function castLightning() {
 
     const closestPoint = start.clone().add(dir.clone().multiplyScalar(projLength));
     const distance = closestPoint.distanceTo(pos);
-    return distance < 1.2; 
+    return distance < 1.2;
   });
 
   hitBoxes.forEach(b => {
@@ -416,7 +404,7 @@ function castFrost() {
     const z = Math.sin(angle) * radius;
     const y = (Math.random() - 0.5) * 0.3;
 
-    positions[3 * i    ] = origin.x + x;
+    positions[3 * i] = origin.x + x;
     positions[3 * i + 1] = origin.y + y;
     positions[3 * i + 2] = origin.z + z;
 
@@ -433,9 +421,9 @@ function castFrost() {
 
   const mat = new THREE.PointsMaterial({
     color: 0x88ccff,
-    size: 1.0,              
+    size: 1.0,
     transparent: true,
-    opacity: 1.0,             
+    opacity: 1.0,
     depthWrite: false,
     sizeAttenuation: true
   });
