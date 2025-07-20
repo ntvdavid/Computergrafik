@@ -7,6 +7,8 @@ const guiParams = {
   boxCount:         10,
   fireflyCount:    200,
   spawnRadius:     10,  
+  musicVolume: 0.4,
+
 };
 
 const spells = {
@@ -28,6 +30,8 @@ gui.add(guiParams, 'fireflyCount',       0, 1000, 1 )
    .name('Anzahl Fireflies')
    .onChange(v => initFireflies());
 gui.add(guiParams, 'spawnRadius',        1,   50   ).name('Spawn-Radius');
+gui.add(guiParams, 'musicVolume', 0, 1).name('Musiklautstärke')
+   .onChange(v => bgMusic.setVolume(v));
 gui.add(spells, 'Feuerball').name('Feuerball');
 gui.add(spells, 'Blitz'    ).name('Blitz');
 gui.add(spells, 'Frost'    ).name('Frost');
@@ -43,6 +47,7 @@ let motes, moteSpeeds;
 let world, boxes = [], explosions = [], projectiles = [];
 let groundRotationSpeed = guiParams.groundSpeed; 
 let wandAnim = { active: false, time: 0 };
+let aimLine;
 
 initScene();
 initPhysics();
@@ -80,6 +85,27 @@ function initScene() {
     controls.handleResize();
     composer.setSize(innerWidth, innerHeight);
     bloomPass.setSize(innerWidth, innerHeight);
+  });
+
+  const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+  const lineGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0), // Startpunkt
+    new THREE.Vector3(0, 0, -1) // Richtung (wird später gesetzt)
+  ]);
+  aimLine = new THREE.Line(lineGeom, lineMat);
+  scene.add(aimLine);
+
+  // Audio initialisieren
+  const listener = new THREE.AudioListener();
+  camera.add(listener);
+
+  bgMusic = new THREE.Audio(listener);
+  const audioLoader = new THREE.AudioLoader();
+
+  audioLoader.load('sounds/magic-music.mp3', buffer => {
+    bgMusic.setBuffer(buffer);
+    bgMusic.setLoop(true);
+    bgMusic.setVolume(guiParams.musicVolume || 0.4);
   });
 }
 
@@ -133,6 +159,18 @@ function initSkyboxEquirect() {
     }
   );
 }
+
+const startButton = document.getElementById('startButton');
+startButton.addEventListener('click', () => {
+  if (bgMusic && !bgMusic.isPlaying) {
+    if (bgMusic.context.state === 'suspended') {
+      bgMusic.context.resume();
+    }
+    bgMusic.play();
+  }
+  startButton.style.display = 'none';
+  requestAnimationFrame(animate);
+});
 
 function initGround() {
   const tex = new THREE.TextureLoader().load('magic_circle.png');
@@ -389,7 +427,7 @@ function animate(time) {
     }
   }
     
-    // Orbit-Kamera
+  // Orbit-Kamera
   camera.position.applyAxisAngle(new THREE.Vector3(0,1,0), dt*guiParams.orbitSpeed*Math.PI*2);
   camera.lookAt(0,0,0);
 
@@ -432,4 +470,20 @@ function animate(time) {
 
   composer.render();
   requestAnimationFrame(animate);
+
+  camera.position.applyAxisAngle(new THREE.Vector3(0,1,0), dt*guiParams.orbitSpeed*Math.PI*2);
+  camera.lookAt(0,0,0);
+
+  // ---Dünne Linie zum Zielen
+  // Position & Richtung vom Stab holen
+  const start = new THREE.Vector3();
+  const dir   = new THREE.Vector3();
+  tip.getWorldPosition(start);
+  tip.getWorldDirection(dir);
+
+  // Endpunkt berechnen (z. B. 10 Einheiten in Blickrichtung)
+  const end = start.clone().add(dir.multiplyScalar(100));
+
+  // Line-Geometrie updaten
+  aimLine.geometry.setFromPoints([start, end]);
 }

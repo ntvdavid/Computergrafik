@@ -16,6 +16,20 @@
       padding: 8px 12px;
       border-radius: 4px;
     }
+
+    #crosshair {
+      position: absolute;    
+      left: 50%;
+      width: 12px;
+      height: 12px;
+      margin-left: -6px;
+      margin-top: -6px;
+      background: rgb(226, 192, 192);
+      border-radius: 50%;
+      opacity: 0.8;
+      z-index: 20;
+      pointer-events: none;
+    }
   </style>
   <!-- three.js und TrackballControls (UMD) -->
   <script src="libs/three/three.js"></script>
@@ -36,6 +50,26 @@
 </head>
 <body>
   <canvas id="c"></canvas>
+  <div id="crosshair"></div>
+  <button id="startButton">Start</button>
+
+  <style>
+    #startButton {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 16px 32px;
+      font-size: 20px;
+      z-index: 100;
+      cursor: pointer;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      border: none;
+      border-radius: 8px;
+    }
+  </style>
+
   <script src="magic_lab.js"></script>
 </body>
 </html>
