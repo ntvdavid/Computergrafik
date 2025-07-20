@@ -220,7 +220,7 @@ function initGround() {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
 
   ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(20, 20),
+    new THREE.CircleGeometry(10, 64), // Radius 10, 64 Segmente für Rundheit
     new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
   );
   ground.rotation.x = -Math.PI / 2;
