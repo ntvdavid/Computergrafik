@@ -70,6 +70,17 @@
     }
   </style>
 
+  <div id="hud" style="position:absolute; top:10px; left:10px; color:white; font-size:18px; font-family:sans-serif; z-index:10;">
+    Zeit: <span id="timer">30</span>s<br>
+    Treffer: <span id="hits">0</span>
+  </div>
+
+  <div id="gameOverScreen" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; font-size:24px; text-align:center; font-family:sans-serif; z-index:20;">
+    <div>Zeit abgelaufen!</div>
+    <div>Getroffene Bücher: <span id="finalHits">0</span></div>
+    <button onclick="restartGame()" style="margin-top:10px; font-size:18px;">Neustart</button>
+  </div>
+
   <script src="magic_lab.js"></script>
 </body>
 </html>

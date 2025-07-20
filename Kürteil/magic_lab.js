@@ -44,6 +44,9 @@ let groundRotationSpeed = guiParams.groundSpeed;
 let aimLine;
 let bookModel;
 let bgMusic; // Audio-Objekt für Musik
+let timer = 30;         // Countdown in Sekunden
+let hitCount = 0;       // Getroffene Bücher
+let gameOver = false;   // Spielstatus
 
 // ————————————————— Initialisierung —————————————————
 
@@ -57,8 +60,6 @@ initPostprocessing();
 initFireflies(); // Glühwürmchen
 initSkyboxEquirect(); // Sternenhimmel
 requestAnimationFrame(animate); // Start
-
-
 
 // ————————————————— Functions —————————————————
 // --- Szene & Renderer ---
@@ -272,7 +273,24 @@ function breakBox(idx) {
   scene.remove(mesh);
   world.removeBody(body);
   boxes.splice(idx, 1);
+  hitCount++;
 }
+
+// --- Spiel ende ---
+function showGameOver() {
+  document.getElementById("finalHits").textContent = hitCount;
+  document.getElementById("gameOverScreen").style.display = "block";
+}
+
+// --- Neustart ---
+function restartGame() {
+  timer = 30;
+  hitCount = 0;
+  gameOver = false;
+  document.getElementById("gameOverScreen").style.display = "none";
+  initBooks(); // Bücher neu platzieren
+}
+
 
 // ————————————————— Spells —————————————————
 // --- Zaubersprüche: Explosionseffekt ---
@@ -400,56 +418,63 @@ function castLightning() {
 
 // --- Zauberspruch: Frost ---
 function castFrost() {
-  const origin = new THREE.Vector3();
-  tip.getWorldPosition(origin);
+  const start = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+  tip.getWorldPosition(start);
+  tip.getWorldDirection(dir);
 
-  const count = 500;
+  const count = 200;
   const positions = new Float32Array(count * 3);
-  const velocities = [];
 
   for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = Math.random() * 0.5;
-    const spread = 2;
+    const spread = 0.5;
+    const forwardDist = Math.random() * 5 + 1;
 
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
-    const y = (Math.random() - 0.5) * 0.3;
-
-    positions[3 * i    ] = origin.x + x;
-    positions[3 * i + 1] = origin.y + y;
-    positions[3 * i + 2] = origin.z + z;
-
-    const dir = new THREE.Vector3(
-      x * 0.2 + (Math.random() - 0.5) * 0.1,
-      y * 0.2 + (Math.random() - 0.5) * 0.1,
-      -spread + Math.random() * 0.5
+    const offset = new THREE.Vector3(
+      (Math.random() - 0.5) * spread,
+      (Math.random() - 0.5) * spread,
+      (Math.random() - 0.5) * spread
     );
-    velocities.push(dir);
+
+    const finalPos = start.clone()
+      .add(dir.clone().multiplyScalar(forwardDist))
+      .add(offset);
+
+    positions[3 * i]     = finalPos.x;
+    positions[3 * i + 1] = finalPos.y;
+    positions[3 * i + 2] = finalPos.z;
   }
 
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const frostGeo = new THREE.BufferGeometry();
+  frostGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  const mat = new THREE.PointsMaterial({
+  const frostMat = new THREE.PointsMaterial({
     color: 0x88ccff,
-    size: 1.0,              
+    size: 0.3,
     transparent: true,
-    opacity: 1.0,             
+    opacity: 0.9,
     depthWrite: false,
-    sizeAttenuation: true
+    blending: THREE.AdditiveBlending
   });
 
-  const particles = new THREE.Points(geom, mat);
-  particles.userData = { vels: velocities, age: 0 };
-  scene.add(particles);
-  explosions.push(particles);
+  const frostPoints = new THREE.Points(frostGeo, frostMat);
+  scene.add(frostPoints);
+
+  setTimeout(() => scene.remove(frostPoints), 1500);
 }
 
 // ————————————————— Hauptanimations Loop —————————————————
 function animate(time) {
   const dt = (time - t0) * 0.001;
   t0 = time;
+  if (!gameOver) {
+    timer -= dt;
+    if (timer <= 0) {
+      timer = 0;
+      gameOver = true;
+      showGameOver();
+    }
+  }
 
   // --- Projektile bewegen und prüfen ---
   for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -491,14 +516,17 @@ function animate(time) {
     const posA = p.geometry.attributes.position;
     const vels = p.userData.vels;
     p.userData.age += dt;
-
-    for (let j = 0; j < posA.count; j++) {
-      posA.array[3 * j] += vels[j].x * dt;
+  
+    if (!vels) continue;
+  
+    const len = posA.array.length / 3;
+    for (let j = 0; j < len; j++) {
+      posA.array[3 * j    ] += vels[j].x * dt;
       posA.array[3 * j + 1] += vels[j].y * dt - 9.8 * dt * 0.2;
       posA.array[3 * j + 2] += vels[j].z * dt;
     }
     posA.needsUpdate = true;
-
+  
     if (p.userData.age > 2) {
       scene.remove(p);
       explosions.splice(i, 1);
@@ -527,6 +555,9 @@ function animate(time) {
     b.mesh.position.y += Math.sin(t * 5 + b.mesh.userData.phase) * 0.15;
     b.mesh.rotation.z += 0.01 * Math.sin(t * 2 + b.mesh.userData.phase);
   });
+
+  document.getElementById("timer").textContent = Math.ceil(timer);
+  document.getElementById("hits").textContent = hitCount;
 
   // --- Szene rendern ---
   composer.render();
