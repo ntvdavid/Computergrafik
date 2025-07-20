@@ -7,7 +7,7 @@ const guiParams = {
   boxCount:         10,
   fireflyCount:    200,
   spawnRadius:     10,  
-  musicVolume: 0.4,
+  musicVolume: 0.4, // Musik funktioniert generell nur im Chrome-Browser
 
 };
 
@@ -27,8 +27,11 @@ gui.add(guiParams, 'explosionStrength',  1,   20  ).name('Stärke Puls');
 gui.add(guiParams, 'orbitSpeed', 0, 2).name('Orbit Speed');
 gui.add(guiParams, 'boxCount',         0,  100, 1 ).name('Anzahl Boxen');
 gui.add(guiParams, 'fireflyCount',       0, 1000, 1 )
-   .name('Anzahl Fireflies')
-   .onChange(v => initFireflies());
+  .name('Anzahl Fireflies')
+  .onChange(v => initFireflies());
+gui.add(guiParams, 'boxCount', 0, 100, 1)
+  .name('Anzahl Bücher')
+  .onChange(v => initBooks());
 gui.add(guiParams, 'spawnRadius',        1,   50   ).name('Spawn-Radius');
 gui.add(guiParams, 'musicVolume', 0, 1).name('Musiklautstärke')
    .onChange(v => bgMusic.setVolume(v));
@@ -37,24 +40,26 @@ gui.add(spells, 'Blitz'    ).name('Blitz');
 gui.add(spells, 'Frost'    ).name('Frost');
 
 gui.__controllers.find(c=>c.property==='boxCount')
-   .onChange(v => initBoxes());
+  .onChange(v => initBoxes());
 
-let t0           = 0;
+let t0 = 0;
 let scene, camera, renderer, controls;
 let ground, tip, wand;
 let composer, bloomPass, fireflies, portal;
-let motes, moteSpeeds;
 let world, boxes = [], explosions = [], projectiles = [];
 let groundRotationSpeed = guiParams.groundSpeed; 
 let wandAnim = { active: false, time: 0 };
 let aimLine;
+let bookModel;
 
 initScene();
 initPhysics();
 initGround();
 initWand();
 initInput();
-initBoxes();
+loadBookModel(() => {
+  initBooks();
+});
 initPostprocessing();
 initFireflies();
 initSkyboxEquirect();
@@ -109,23 +114,20 @@ function initScene() {
   });
 }
 
+function loadBookModel(callback) {
+  const loader = new THREE.GLTFLoader();
+  loader.load('models/open_book.glb', gltf => {
+    bookModel = gltf.scene;
+    callback(); // initBooks starten, wenn geladen
+  });
+}
+
 function initPhysics() {
   world = new CANNON.World();
   world.gravity.set(0, 0, 0);
   world.broadphase = new CANNON.NaiveBroadphase();
 
   // Boden-Plane (mass=0 → static)
-  const groundBody = new CANNON.Body({ mass: 0 });
-  groundBody.addShape(new CANNON.Plane());
-  groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
-  world.addBody(groundBody);
-}
-
-function initPhysics() {
-  world = new CANNON.World();
-  world.gravity.set(0,0,0);
-  world.broadphase = new CANNON.NaiveBroadphase();
-
   const groundBody = new CANNON.Body({ mass: 0 });
   groundBody.addShape(new CANNON.Plane());
   groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
@@ -198,33 +200,41 @@ function initWand() {
   scene.add(wand);
 }
 
-function initBoxes() {
-  // alte Boxen entfernen
+function initBooks() {
+  if (!bookModel) return;
+
   boxes.forEach(b => { scene.remove(b.mesh); world.removeBody(b.body); });
   boxes.length = 0;
 
   const R = guiParams.spawnRadius;
-  const geo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
-  const mat = new THREE.MeshPhongMaterial({ color:0x88ccff, emissive:0x222244, shininess:50 });
 
-  for (let i=0; i<guiParams.boxCount; i++) {
-    const mesh = new THREE.Mesh(geo, mat);
+  for (let i = 0; i < guiParams.boxCount; i++) {
+    const mesh = bookModel.clone(true);
+    mesh.scale.set(2, 2, 2);
     mesh.position.set(
-      (Math.random() - .5) * 2 * R,
-      0.6 + Math.random() * 3,
-      (Math.random() - .5) * 2 * R
+      (Math.random() - 0.5) * 2 * R,
+      3 + Math.random() * 2,
+      (Math.random() - 0.5) * 2 * R
     );
+    
+    mesh.rotation.z = (Math.random() - 0.5) * 0.2;
     scene.add(mesh);
 
-    const shape = new CANNON.Cylinder(0.4, 0.4, 1.2, 16);
-    const body  = new CANNON.Body({ mass:2 });
+    const shape = new CANNON.Box(new CANNON.Vec3(0.4, 0.2, 0.6)); // grobe Hitbox
+    const body = new CANNON.Body({ mass: 2 });
     body.addShape(shape);
     body.position.copy(mesh.position);
     world.addBody(body);
 
     boxes.push({ mesh, body });
+
+    boxes.forEach(b => {
+      b.mesh.userData.baseY = b.mesh.position.y;
+      b.mesh.userData.phase = Math.random() * Math.PI * 2;
+    });
   }
 }
+
 
 function initFireflies() {
   if (fireflies) scene.remove(fireflies);
@@ -463,9 +473,15 @@ function animate(time) {
 
   // Physik-Step
   world.step(1/60, dt, 3);
-  boxes.forEach(b=>{
+  const t = time * 0.001;
+  boxes.forEach(b => {
+    // Physik synchronisieren
     b.mesh.position.copy(b.body.position);
     b.mesh.quaternion.copy(b.body.quaternion);
+  
+    // Animation: leichtes Schweben und Wackeln
+    b.mesh.position.y += Math.sin(t * 2 + b.mesh.userData.phase) * 0.1;
+    b.mesh.rotation.z += 0.002 * Math.sin(t + b.mesh.userData.phase);
   });
 
   composer.render();
