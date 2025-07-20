@@ -43,10 +43,13 @@ let world, boxes = [], explosions = [], projectiles = [];
 let groundRotationSpeed = guiParams.groundSpeed;
 let aimLine;
 let bookModel;
-let bgMusic; // Audio-Objekt für Musik
+let bgMusic;
 let timer = 30;         // Countdown in Sekunden
 let hitCount = 0;       // Getroffene Bücher
 let gameOver = false;   // Spielstatus
+let gameStarted = false;
+let timerRunning = false;
+let timeScale = 1.0;
 
 // ————————————————— Initialisierung —————————————————
 
@@ -198,7 +201,6 @@ function initSkyboxEquirect() {
 }
 
 // --- Start-Button (Audio starten) ---
-const startButton = document.getElementById('startButton');
 startButton.addEventListener('click', () => {
   if (bgMusic && !bgMusic.isPlaying) {
     if (bgMusic.context.state === 'suspended') {
@@ -206,8 +208,10 @@ startButton.addEventListener('click', () => {
     }
     bgMusic.play();
   }
+  gameStarted = true;
+  timerRunning = true;
+  document.getElementById("hud").style.display = "block";
   startButton.style.display = 'none';
-  requestAnimationFrame(animate);
 });
 
 // --- Boden (magischer Kreis) ---
@@ -418,56 +422,64 @@ function castLightning() {
 
 // --- Zauberspruch: Frost ---
 function castFrost() {
-  const start = new THREE.Vector3();
-  const dir = new THREE.Vector3();
-  tip.getWorldPosition(start);
-  tip.getWorldDirection(dir);
+  const origin = new THREE.Vector3();
+  tip.getWorldPosition(origin);
 
-  const count = 200;
+  const count = 500;
   const positions = new Float32Array(count * 3);
+  const velocities = [];
 
   for (let i = 0; i < count; i++) {
-    const spread = 0.5;
-    const forwardDist = Math.random() * 5 + 1;
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * 0.5;
+    const spread = 2;
 
-    const offset = new THREE.Vector3(
-      (Math.random() - 0.5) * spread,
-      (Math.random() - 0.5) * spread,
-      (Math.random() - 0.5) * spread
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const y = (Math.random() - 0.5) * 0.3;
+
+    positions[3 * i    ] = origin.x + x;
+    positions[3 * i + 1] = origin.y + y;
+    positions[3 * i + 2] = origin.z + z;
+
+    const dir = new THREE.Vector3(
+      x * 0.2 + (Math.random() - 0.5) * 0.1,
+      y * 0.2 + (Math.random() - 0.5) * 0.1,
+      -spread + Math.random() * 0.5
     );
-
-    const finalPos = start.clone()
-      .add(dir.clone().multiplyScalar(forwardDist))
-      .add(offset);
-
-    positions[3 * i]     = finalPos.x;
-    positions[3 * i + 1] = finalPos.y;
-    positions[3 * i + 2] = finalPos.z;
+    velocities.push(dir);
   }
 
-  const frostGeo = new THREE.BufferGeometry();
-  frostGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const geom = new THREE.BufferGeometry();
+  geom.addAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  const frostMat = new THREE.PointsMaterial({
+  const mat = new THREE.PointsMaterial({
     color: 0x88ccff,
-    size: 0.3,
+    size: 1.0,              
     transparent: true,
-    opacity: 0.9,
+    opacity: 1.0,             
     depthWrite: false,
-    blending: THREE.AdditiveBlending
+    sizeAttenuation: true
   });
 
-  const frostPoints = new THREE.Points(frostGeo, frostMat);
-  scene.add(frostPoints);
-
-  setTimeout(() => scene.remove(frostPoints), 1500);
+  const particles = new THREE.Points(geom, mat);
+  particles.userData = { vels: velocities, age: 0 };
+  scene.add(particles);
+  explosions.push(particles);
+ 
+  timeScale = 0.3;               // Szene läuft mit 30 % Speed
+  setTimeout(() => {
+    timeScale = 1.0;             // nach 3 Sekunden zurück auf Normal
+  }, 3000);
 }
 
 // ————————————————— Hauptanimations Loop —————————————————
 function animate(time) {
-  const dt = (time - t0) * 0.001;
+  const rawDt = (time - t0) * 0.001;
   t0 = time;
-  if (!gameOver) {
+  const dt  = rawDt * timeScale;
+
+  if (!gameOver && timerRunning) {
     timer -= dt;
     if (timer <= 0) {
       timer = 0;
